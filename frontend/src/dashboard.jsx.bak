@@ -1,0 +1,288 @@
+/**
+ * Main dashboard page — orchestrates all panels and visualizations.
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  fetchDashboardStats, fetchSeverityCounts, fetchVulnTrends,
+  fetchTopAssets, fetchAssetCounts, fetchAssets, fetchScans,
+  fetchVulnerabilities, startScan, createAsset, discoverAssets,
+  login as apiLogin, logout as apiLogout, getStoredToken, getStoredUsername,
+  cancelScan, downloadScanReport,
+} from './api';
+import {
+  StatsCards, SeverityChart, TrendsChart, TopAssetsChart,
+  AssetTypeChart, AttackSurfaceMap, VulnTable, ScanPanel,
+  AddAssetForm, ScanHistory, AssetList,
+} from './components';
+
+const REFRESH_INTERVAL = 30000;
+
+/* ─── Login Page ──────────────────────────────────────────────────────────── */
+function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await apiLogin(username, password);
+      onLogin();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <form onSubmit={handleSubmit} style={{
+        background: '#1E293B', borderRadius: 16, padding: '40px 36px', width: 380,
+        border: '1px solid #334155', boxShadow: '0 25px 50px -12px rgba(0,0,0,.5)',
+      }}>
+        <h1 style={{ color: '#E2E8F0', fontSize: 24, fontWeight: 700, marginBottom: 6, textAlign: 'center', letterSpacing: '-0.02em' }}>VAPT Dashboard</h1>
+        <p style={{ color: '#64748B', fontSize: 14, textAlign: 'center', marginBottom: 28 }}>Sign in to continue</p>
+
+        {error && (
+          <div style={{ background: '#EF44441A', border: '1px solid #EF444466', borderRadius: 8, padding: '8px 12px', color: '#EF4444', fontSize: 13, marginBottom: 16 }}>{error}</div>
+        )}
+
+        <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Username</label>
+        <input
+          type="text"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          required
+          autoFocus
+          style={{
+            width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155',
+            background: '#0F172A', color: '#E2E8F0', fontSize: 14, outline: 'none', marginBottom: 16,
+            boxSizing: 'border-box',
+          }}
+        />
+
+        <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+          style={{
+            width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155',
+            background: '#0F172A', color: '#E2E8F0', fontSize: 14, outline: 'none', marginBottom: 24,
+            boxSizing: 'border-box',
+          }}
+        />
+
+        <button type="submit" disabled={loading} style={{
+          width: '100%', padding: '10px 0', borderRadius: 8, border: 'none',
+          background: '#6366F1', color: '#fff', fontSize: 15, fontWeight: 600,
+          cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1,
+          transition: 'opacity .15s',
+        }}>
+          {loading ? 'Signing in…' : 'Sign In'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ─── Dashboard ──────────────────────────────────────────────────────────── */
+export default function Dashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(!!getStoredToken());
+  const [stats, setStats] = useState({});
+  const [severity, setSeverity] = useState({});
+  const [trends, setTrends] = useState([]);
+  const [topAssets, setTopAssets] = useState([]);
+  const [assetCounts, setAssetCounts] = useState({});
+  const [assets, setAssets] = useState([]);
+  const [scans, setScans] = useState([]);
+  const [vulns, setVulns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [tab, setTab] = useState('overview');
+
+  // Listen for forced logout (401/403 interceptor)
+  useEffect(() => {
+    const handleLogout = () => setIsAuthenticated(false);
+    window.addEventListener('auth-logout', handleLogout);
+    return () => window.removeEventListener('auth-logout', handleLogout);
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [s, sev, tr, top, ac, a, sc, v] = await Promise.all([
+        fetchDashboardStats().catch(() => ({})),
+        fetchSeverityCounts().catch(() => ({})),
+        fetchVulnTrends().catch(() => []),
+        fetchTopAssets().catch(() => []),
+        fetchAssetCounts().catch(() => ({})),
+        fetchAssets().catch(() => []),
+        fetchScans().catch(() => []),
+        fetchVulnerabilities().catch(() => []),
+      ]);
+      setStats(s); setSeverity(sev); setTrends(tr); setTopAssets(top);
+      setAssetCounts(ac); setAssets(a); setScans(sc); setVulns(v);
+      setError(null);
+    } catch (err) {
+      setError('Failed to connect to backend');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadData();
+    const interval = setInterval(loadData, REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadData, isAuthenticated]);
+
+  const handleLogin = () => { setIsAuthenticated(true); setLoading(true); };
+  const handleLogout = () => { apiLogout(); setIsAuthenticated(false); };
+
+  const handleAddAsset = async (name, type) => {
+    try {
+      await createAsset({ asset_name: name, asset_type: type });
+      loadData();
+    } catch (err) {
+      alert('Failed to add asset: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleScan = async (assetId, scanType) => {
+    try {
+      await startScan({ asset_id: assetId, scan_type: scanType });
+      loadData();
+    } catch (err) {
+      alert('Failed to start scan: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleDiscover = async (domain) => {
+    try {
+      await discoverAssets(domain);
+      loadData();
+    } catch (err) {
+      alert('Discovery failed: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleCancelScan = async (scanId) => {
+    try {
+      await cancelScan(scanId);
+      loadData();
+    } catch (err) {
+      alert('Failed to cancel scan: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleScanReport = (scanId) => downloadScanReport(scanId);
+
+  const handleMapNodeClick = (node) => setTab('vulns');
+
+  if (!isAuthenticated) return <LoginPage onLogin={handleLogin} />;
+
+  const tabs = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'assets',   label: 'Assets & Scans' },
+    { key: 'vulns',    label: 'Vulnerabilities' },
+    { key: 'map',      label: 'Attack Surface' },
+  ];
+
+  const tabStyle = (active) => ({
+    padding: '8px 18px',
+    borderRadius: 8,
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 14,
+    background: active ? '#6366F1' : 'transparent',
+    color: active ? '#fff' : '#94A3B8',
+    transition: 'background .15s, color .15s',
+  });
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94A3B8', background: '#0F172A' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #334155', borderTop: '3px solid #6366F1', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto 16px' }} />
+          <div style={{ fontSize: 16, fontWeight: 500 }}>Loading VAPT Dashboard...</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#0F172A' }}>
+      {/* Header */}
+      <header style={{ background: '#0F172A', borderBottom: '1px solid #1E293B', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, height: 56, backdropFilter: 'blur(12px)' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#E2E8F0', letterSpacing: '-0.02em' }}>VAPT Dashboard</h1>
+        <nav style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {tabs.map(t => (
+            <button key={t.key} style={tabStyle(tab === t.key)} onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
+          ))}
+          <span style={{ width: 1, height: 24, background: '#334155', margin: '0 10px' }} />
+          <span style={{ color: '#94A3B8', fontSize: 13 }}>{getStoredUsername()}</span>
+          <button onClick={handleLogout} style={{
+            padding: '6px 14px', borderRadius: 8, border: '1px solid #334155',
+            background: 'transparent', color: '#94A3B8', fontSize: 13, fontWeight: 500,
+            cursor: 'pointer', transition: 'border-color .15s',
+          }}>
+            Logout
+          </button>
+        </nav>
+      </header>
+
+      {error && (
+        <div style={{ margin: '16px 32px', padding: '10px 16px', background: '#EF44441A', border: '1px solid #EF444466', borderRadius: 8, color: '#EF4444', fontSize: 14 }}>
+          {error}
+        </div>
+      )}
+
+      <main style={{ padding: '28px 32px', maxWidth: 1400, margin: '0 auto' }}>
+        {/* ─── Overview Tab ───────────────────────────────────────────── */}
+        {tab === 'overview' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <StatsCards stats={stats} />
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'stretch' }}>
+              <TrendsChart trends={trends} />
+              <SeverityChart severity={severity} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'stretch' }}>
+              <TopAssetsChart assets={topAssets} />
+              <AssetTypeChart counts={assetCounts} />
+            </div>
+          </div>
+        )}
+
+        {/* ─── Assets & Scans Tab ─────────────────────────────────────── */}
+        {tab === 'assets' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <AddAssetForm onAdd={handleAddAsset} />
+            <ScanPanel assets={assets} onScan={handleScan} onDiscover={handleDiscover} />
+            <AssetList assets={assets} />
+            <ScanHistory scans={scans} onCancel={handleCancelScan} onReport={handleScanReport} />
+          </div>
+        )}
+
+        {/* ─── Vulnerabilities Tab ────────────────────────────────────── */}
+        {tab === 'vulns' && (
+          <VulnTable vulnerabilities={vulns} />
+        )}
+
+        {/* ─── Attack Surface Map Tab ─────────────────────────────────── */}
+        {tab === 'map' && (
+          <AttackSurfaceMap assets={assets} vulnerabilities={vulns} onNodeClick={handleMapNodeClick} />
+        )}
+      </main>
+    </div>
+  );
+}

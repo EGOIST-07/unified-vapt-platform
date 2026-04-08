@@ -1,0 +1,90 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: vapt_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: vapt_dashboard
+      MYSQL_USER: vapt_user
+      MYSQL_PASSWORD: vapt_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "vapt_user", "-pvapt_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: vapt_redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: vapt_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=vapt_user
+      - MYSQL_PASSWORD=vapt_password
+      - MYSQL_DATABASE=vapt_dashboard
+      - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGIN=*
+      - JWT_SECRET=vapt-dashboard-secret-key-change-in-prod
+      - SCAN_OUTPUT_DIR=/tmp/vapt_scans
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - scan_results:/tmp/vapt_scans
+    restart: unless-stopped
+
+  celery_worker:
+    build: ./backend
+    container_name: celery_worker
+    command: celery -A celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=vapt_user
+      - MYSQL_PASSWORD=vapt_password
+      - MYSQL_DATABASE=vapt_dashboard
+      - REDIS_URL=redis://redis:6379/0
+      - SCAN_OUTPUT_DIR=/tmp/vapt_scans
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - scan_results:/tmp/vapt_scans
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: vapt_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  scan_results:

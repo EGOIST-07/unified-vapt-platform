@@ -1,0 +1,15 @@
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+mysql-connector-python==9.1.*
+pydantic==2.10.*
+reportlab==4.3.*
+sqlalchemy
+celery
+redis
+python-nmap
+pandas
+python-dotenv
+requests
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.0.1
