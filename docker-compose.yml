@@ -2,18 +2,20 @@ services:
   mysql:
     image: mysql:8.0
     container_name: vapt_mysql
+    env_file:
+      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: vapt_dashboard
-      MYSQL_USER: vapt_user
-      MYSQL_PASSWORD: vapt_password
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     ports:
       - "3307:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "vapt_user", "-pvapt_password"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -36,16 +38,21 @@ services:
     container_name: vapt_backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=vapt_user
-      - MYSQL_PASSWORD=vapt_password
-      - MYSQL_DATABASE=vapt_dashboard
-      - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGIN=*
-      - JWT_SECRET=vapt-dashboard-secret-key-change-in-prod
-      - SCAN_OUTPUT_DIR=/tmp/vapt_scans
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - REDIS_URL=${REDIS_URL}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES}
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - SCAN_OUTPUT_DIR=${SCAN_OUTPUT_DIR}
     depends_on:
       mysql:
         condition: service_healthy
@@ -59,14 +66,16 @@ services:
     build: ./backend
     container_name: celery_worker
     command: celery -A celery_app worker --loglevel=info --concurrency=4
+    env_file:
+      - .env
     environment:
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=vapt_user
-      - MYSQL_PASSWORD=vapt_password
-      - MYSQL_DATABASE=vapt_dashboard
-      - REDIS_URL=redis://redis:6379/0
-      - SCAN_OUTPUT_DIR=/tmp/vapt_scans
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - REDIS_URL=${REDIS_URL}
+      - SCAN_OUTPUT_DIR=${SCAN_OUTPUT_DIR}
     depends_on:
       mysql:
         condition: service_healthy

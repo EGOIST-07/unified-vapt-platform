@@ -11,9 +11,14 @@ from passlib.context import CryptContext
 
 import database as db
 
-SECRET_KEY = os.getenv("JWT_SECRET", "vapt-dashboard-secret-key-change-in-prod")
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET environment variable is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -114,5 +119,5 @@ def ensure_admin():
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM users")
         count = cur.fetchone()[0]
-    if count == 0:
-        create_user("admin", "admin123")
+    if count == 0 and DEFAULT_ADMIN_USERNAME and DEFAULT_ADMIN_PASSWORD:
+        create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD)
